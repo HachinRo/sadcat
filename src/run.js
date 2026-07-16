@@ -1,7 +1,9 @@
 const crypto = require("node:crypto");
-const { selectCandidates } = require("./select");
+const { buildBestCfNodes, DEFAULT_DOMAIN_SOURCE_URL } = require("./domain-source");
+const { deduplicateCandidates, selectCandidates } = require("./select");
 
 const sourceUrl = process.env.BEST_CF_IP_URL?.trim() || "https://api.4ce.cn/api/bestCFIP";
+const domainSourceUrl = process.env.BESTCF_DOMAIN_URL?.trim() || DEFAULT_DOMAIN_SOURCE_URL;
 const startedAt = new Date().toISOString();
 const runId = `${startedAt.replace(/[:.]/g, "-")}-${crypto.randomBytes(4).toString("hex")}`;
 
@@ -11,6 +13,12 @@ async function fetchCandidates() {
   const payload = await response.json();
   if (!payload?.success || !payload?.data) throw new Error("Candidate source returned an invalid response");
   return payload.data;
+}
+
+async function fetchDomainSource() {
+  const response = await fetch(domainSourceUrl, { headers: { accept: "text/plain", "user-agent": "cloudflare-node-radar/3.0" }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`BestCF domain source returned HTTP ${response.status}`);
+  return response.text();
 }
 
 async function sendToDashboard(result) {
@@ -36,15 +44,16 @@ async function sendToDashboard(result) {
 async function main() {
   let nodes = [];
   try {
-    const candidates = await fetchCandidates();
+    const [candidates, domainSource] = await Promise.all([fetchCandidates(), fetchDomainSource()]);
     const selection = selectCandidates(candidates, 3);
-    nodes = selection.nodes;
+    const bestCfNodes = await buildBestCfNodes(domainSource);
+    nodes = deduplicateCandidates([...selection.nodes, ...bestCfNodes]);
     const result = {
       runId,
       startedAt,
       completedAt: new Date().toISOString(),
       status: "success",
-      message: `${nodes.length} optimized nodes copied from the public feed`,
+      message: `${nodes.length} consolidated IPv4, IPv6, and domain endpoints measured from two feeds`,
       dnsUpdated: false,
       nodes,
     };
