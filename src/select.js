@@ -1,5 +1,7 @@
 const VERSIONS = ["v4", "v6"];
 const CARRIERS = ["CM", "CU", "CT"];
+const ALL_VERSIONS = ["v4", "v6", "domain"];
+const ALL_CARRIERS = [...CARRIERS, "BESTCF"];
 
 function normalizeCandidate(candidate, version) {
   const ip = typeof candidate?.ip === "string" ? candidate.ip.trim() : "";
@@ -28,7 +30,7 @@ function compareNodes(a, b) {
   if (a.selected !== b.selected) return a.selected ? -1 : 1;
   const rankDifference = a.rank - b.rank;
   if (rankDifference !== 0) return rankDifference;
-  return CARRIERS.indexOf(a.carrier) - CARRIERS.indexOf(b.carrier);
+  return ALL_CARRIERS.indexOf(a.carrier) - ALL_CARRIERS.indexOf(b.carrier);
 }
 
 function deduplicateCandidates(candidates) {
@@ -44,9 +46,9 @@ function deduplicateCandidates(candidates) {
     unique.set(key, { ...winner, selected: existing.selected || candidate.selected });
   }
   return [...unique.values()].sort((a, b) => {
-    const versionDifference = VERSIONS.indexOf(a.version) - VERSIONS.indexOf(b.version);
+    const versionDifference = ALL_VERSIONS.indexOf(a.version) - ALL_VERSIONS.indexOf(b.version);
     if (versionDifference !== 0) return versionDifference;
-    const carrierDifference = CARRIERS.indexOf(a.carrier) - CARRIERS.indexOf(b.carrier);
+    const carrierDifference = ALL_CARRIERS.indexOf(a.carrier) - ALL_CARRIERS.indexOf(b.carrier);
     if (carrierDifference !== 0) return carrierDifference;
     return compareNodes(a, b);
   });
