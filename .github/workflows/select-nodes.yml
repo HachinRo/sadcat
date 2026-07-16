@@ -16,9 +16,6 @@ jobs:
   select-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: automation
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,7 +24,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
       - name: Select nodes, update DNSPod, and publish result
