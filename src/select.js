@@ -54,6 +54,15 @@ function deduplicateCandidates(candidates) {
   });
 }
 
+function limitCandidatesByVersion(candidates, limit = 10) {
+  const unique = deduplicateCandidates(candidates);
+  return ALL_VERSIONS.flatMap((version) => unique
+    .filter((candidate) => candidate.version === version)
+    .sort(compareNodes)
+    .slice(0, limit)
+    .map((candidate, index) => ({ ...candidate, rank: index + 1, selected: index === 0 })));
+}
+
 function selectCandidates(data, retainPerCarrier = 3) {
   const nodes = [];
   const selected = { v4: {}, v6: {} };
@@ -80,4 +89,4 @@ function selectCandidates(data, retainPerCarrier = 3) {
   return { nodes: deduplicateCandidates(nodes), selected };
 }
 
-module.exports = { CARRIERS, VERSIONS, deduplicateCandidates, normalizeCandidate, selectCandidates };
+module.exports = { CARRIERS, VERSIONS, deduplicateCandidates, limitCandidatesByVersion, normalizeCandidate, selectCandidates };
