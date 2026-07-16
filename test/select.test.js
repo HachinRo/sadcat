@@ -31,10 +31,31 @@ test("retains IPv6 candidates when the source omits latency", () => {
     v6: { CM: ipv6, CU: ipv6, CT: ipv6 },
   }, 3);
 
-  assert.equal(result.nodes.filter((node) => node.version === "v6").length, 9);
+  assert.equal(result.nodes.filter((node) => node.version === "v6").length, 3);
   assert.equal(result.selected.v6.CM, "2606:4700:57::3");
   assert.equal(result.nodes.some((node) => node.ip === "2606:4700:57::2" && node.latency === 0), true);
   assert.equal(result.nodes.find((node) => node.ip === "2606:4700:57::2")?.speed, 640);
+});
+
+test("drops duplicate addresses and keeps their strongest occurrence", () => {
+  const sharedV4 = [
+    { ip: "104.16.1.1", latency: 25, speed: 200 },
+    { ip: "104.16.1.2", latency: 30, speed: 300 },
+  ];
+  const result = selectCandidates({
+    v4: {
+      CM: sharedV4,
+      CU: [{ ip: "104.16.1.1", latency: 20, speed: 180 }, ...sharedV4.slice(1)],
+      CT: [{ ip: "104.16.1.1", latency: 20, speed: 220 }, ...sharedV4.slice(1)],
+    },
+    v6: { CM: candidates(4, "v6"), CU: candidates(5, "v6"), CT: candidates(6, "v6") },
+  }, 2);
+
+  assert.equal(new Set(result.nodes.map((node) => `${node.version}:${node.ip.toLowerCase()}`)).size, result.nodes.length);
+  assert.deepEqual(
+    result.nodes.find((node) => node.ip === "104.16.1.1"),
+    { version: "v4", carrier: "CT", ip: "104.16.1.1", latency: 20, speed: 220, rank: 1, selected: true },
+  );
 });
 
 test("rejects an address stored under the wrong IP family", () => {
