@@ -14,9 +14,42 @@ function normalizeCandidate(candidate, version) {
 function compareCandidates(a, b) {
   const aMeasured = a.latency > 0;
   const bMeasured = b.latency > 0;
-  if (aMeasured && bMeasured) return a.latency - b.latency;
+  if (aMeasured && bMeasured) {
+    const latencyDifference = a.latency - b.latency;
+    if (latencyDifference !== 0) return latencyDifference;
+  }
   if (aMeasured !== bMeasured) return aMeasured ? -1 : 1;
   return b.speed - a.speed;
+}
+
+function compareNodes(a, b) {
+  const performanceDifference = compareCandidates(a, b);
+  if (performanceDifference !== 0) return performanceDifference;
+  if (a.selected !== b.selected) return a.selected ? -1 : 1;
+  const rankDifference = a.rank - b.rank;
+  if (rankDifference !== 0) return rankDifference;
+  return CARRIERS.indexOf(a.carrier) - CARRIERS.indexOf(b.carrier);
+}
+
+function deduplicateCandidates(candidates) {
+  const unique = new Map();
+  for (const candidate of candidates) {
+    const key = `${candidate.version}:${candidate.ip.toLowerCase()}`;
+    const existing = unique.get(key);
+    if (!existing) {
+      unique.set(key, candidate);
+      continue;
+    }
+    const winner = compareNodes(candidate, existing) < 0 ? candidate : existing;
+    unique.set(key, { ...winner, selected: existing.selected || candidate.selected });
+  }
+  return [...unique.values()].sort((a, b) => {
+    const versionDifference = VERSIONS.indexOf(a.version) - VERSIONS.indexOf(b.version);
+    if (versionDifference !== 0) return versionDifference;
+    const carrierDifference = CARRIERS.indexOf(a.carrier) - CARRIERS.indexOf(b.carrier);
+    if (carrierDifference !== 0) return carrierDifference;
+    return compareNodes(a, b);
+  });
 }
 
 function selectCandidates(data, retainPerCarrier = 3) {
@@ -42,7 +75,7 @@ function selectCandidates(data, retainPerCarrier = 3) {
     selected[version].DEFAULT = versionNodes.reduce((best, node) => node.latency < best.latency ? node : best).ip;
   }
 
-  return { nodes, selected };
+  return { nodes: deduplicateCandidates(nodes), selected };
 }
 
-module.exports = { CARRIERS, VERSIONS, normalizeCandidate, selectCandidates };
+module.exports = { CARRIERS, VERSIONS, deduplicateCandidates, normalizeCandidate, selectCandidates };
