@@ -34,6 +34,7 @@ test("retains IPv6 candidates when the source omits latency", () => {
   assert.equal(result.nodes.filter((node) => node.version === "v6").length, 9);
   assert.equal(result.selected.v6.CM, "2606:4700:57::3");
   assert.equal(result.nodes.some((node) => node.ip === "2606:4700:57::2" && node.latency === 0), true);
+  assert.equal(result.nodes.find((node) => node.ip === "2606:4700:57::2")?.speed, 640);
 });
 
 test("rejects an address stored under the wrong IP family", () => {

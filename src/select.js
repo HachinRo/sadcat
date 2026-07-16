@@ -34,7 +34,7 @@ function selectCandidates(data, retainPerCarrier = 3) {
       if (!ranked.length) throw new Error(`No valid ${version === "v4" ? "IPv4" : "IPv6"} candidates for ${carrier}`);
       selected[version][carrier] = ranked[0].ip;
       ranked.forEach((candidate, index) => {
-        const result = { version, carrier, ip: candidate.ip, latency: candidate.latency, rank: index + 1, selected: index === 0 };
+        const result = { version, carrier, ip: candidate.ip, latency: candidate.latency, speed: candidate.speed, rank: index + 1, selected: index === 0 };
         nodes.push(result);
         versionNodes.push(result);
       });
