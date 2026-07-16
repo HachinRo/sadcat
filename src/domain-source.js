@@ -2,6 +2,14 @@ const https = require("node:https");
 const { isIP } = require("node:net");
 
 const DEFAULT_DOMAIN_SOURCE_URL = "https://bestcf.pages.dev/domain/all.txt";
+const DEFAULT_TEXT_SOURCES = [
+  { name: "BestCF domains", url: DEFAULT_DOMAIN_SOURCE_URL },
+  { name: "BestCF Tiancheng", url: "https://bestcf.pages.dev/tiancheng/all.txt" },
+  { name: "BestCF S5GY", url: "https://bestcf.pages.dev/s5gy/all.txt" },
+  { name: "BestCF Gslege", url: "https://bestcf.pages.dev/gslege/Cfxyz.txt" },
+  { name: "svip-s best IPs", url: "https://raw.githubusercontent.com/svip-s/cloudflare_ip/refs/heads/main/best_ips.txt", versions: ["v4"] },
+  { name: "BestCFip IPv4", url: "https://raw.githubusercontent.com/joname1/BestCFip/refs/heads/main/ipv4.txt", versions: ["v4"] },
+];
 const SPEED_TEST_HOST = "speed.cloudflare.com";
 
 function parseEndpoint(line) {
@@ -30,11 +38,11 @@ function parseEndpoint(line) {
   return { address, port, ip, version };
 }
 
-function parseBestCfSource(text) {
+function parseBestCfSource(text, versions = ["v4", "v6", "domain"]) {
   const unique = new Map();
   for (const line of String(text || "").split(/\r?\n/)) {
     const endpoint = parseEndpoint(line);
-    if (endpoint) unique.set(`${endpoint.address}:${endpoint.port}`, endpoint);
+    if (endpoint && versions.includes(endpoint.version)) unique.set(`${endpoint.address}:${endpoint.port}`, endpoint);
   }
   return [...unique.values()];
 }
@@ -104,8 +112,14 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return results;
 }
 
-async function buildBestCfNodes(text, probe = benchmarkTarget, concurrency = 8) {
-  const endpoints = parseBestCfSource(text);
+async function buildBestCfNodes(sources, probe = benchmarkTarget, concurrency = 12) {
+  const inputs = Array.isArray(sources) ? sources : [{ text: sources }];
+  const unique = new Map();
+  for (const input of inputs) {
+    const versions = Array.isArray(input.versions) ? input.versions : undefined;
+    for (const endpoint of parseBestCfSource(input.text, versions)) unique.set(`${endpoint.address}:${endpoint.port}`, endpoint);
+  }
+  const endpoints = [...unique.values()];
   const measured = await mapWithConcurrency(endpoints, concurrency, async (endpoint) => ({ ...endpoint, ...(await probe(endpoint)) }));
   const order = { v4: 0, v6: 1, domain: 2 };
   measured.sort((a, b) => order[a.version] - order[b.version] || (a.latency || Infinity) - (b.latency || Infinity) || b.speed - a.speed || a.ip.localeCompare(b.ip));
@@ -116,4 +130,4 @@ async function buildBestCfNodes(text, probe = benchmarkTarget, concurrency = 8) 
   });
 }
 
-module.exports = { DEFAULT_DOMAIN_SOURCE_URL, benchmarkTarget, buildBestCfNodes, parseBestCfSource, parseEndpoint };
+module.exports = { DEFAULT_DOMAIN_SOURCE_URL, DEFAULT_TEXT_SOURCES, benchmarkTarget, buildBestCfNodes, parseBestCfSource, parseEndpoint };
