@@ -23,3 +23,18 @@ test("builds ranked nodes with measured latency and speed", async () => {
   assert.equal(nodes.every((node) => node.latency > 0 && node.speed > 0), true);
   assert.equal(nodes.every((node) => node.carrier === "BESTCF"), true);
 });
+
+test("combines sources and benchmarks duplicate endpoints once", async () => {
+  let probes = 0;
+  const nodes = await buildBestCfNodes([
+    { text: "example.com:443#Domain\n1.1.1.1:443#IPv4" },
+    { text: "example.com:443#Duplicate\n[2606:4700::1]:443#IPv6" },
+  ], async () => { probes += 1; return { latency: 10, speed: 500 }; });
+  assert.equal(nodes.length, 3);
+  assert.equal(probes, 3);
+});
+
+test("honors version restrictions for IPv4-only feeds", () => {
+  const endpoints = parseBestCfSource("ipv4.list.updated.at#Header\n1.1.1.1:443#IPv4", ["v4"]);
+  assert.deepEqual(endpoints.map((endpoint) => endpoint.ip), ["1.1.1.1"]);
+});
