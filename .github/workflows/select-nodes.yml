@@ -1,0 +1,42 @@
+name: Select Cloudflare nodes
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-node-selection
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  select-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: automation
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: automation/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Select nodes, update DNSPod, and publish result
+        run: npm start
+        env:
+          DNSPOD_SECRET_ID: ${{ secrets.DNSPOD_SECRET_ID }}
+          DNSPOD_SECRET_KEY: ${{ secrets.DNSPOD_SECRET_KEY }}
+          DNSPOD_DOMAIN: ${{ secrets.DNSPOD_DOMAIN }}
+          DNSPOD_SUBDOMAIN: ${{ secrets.DNSPOD_SUBDOMAIN }}
+          SITES_INGEST_URL: ${{ secrets.SITES_INGEST_URL }}
+          SITES_RUNNER_TOKEN: ${{ secrets.SITES_RUNNER_TOKEN }}
+          BEST_CF_IP_URL: ${{ vars.BEST_CF_IP_URL }}
