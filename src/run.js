@@ -1,9 +1,14 @@
 const crypto = require("node:crypto");
-const { buildBestCfNodes, DEFAULT_DOMAIN_SOURCE_URL } = require("./domain-source");
-const { deduplicateCandidates, selectCandidates } = require("./select");
+const { buildBestCfNodes, DEFAULT_TEXT_SOURCES } = require("./domain-source");
+const { limitCandidatesByVersion, selectCandidates } = require("./select");
 
 const sourceUrl = process.env.BEST_CF_IP_URL?.trim() || "https://api.4ce.cn/api/bestCFIP";
-const domainSourceUrl = process.env.BESTCF_DOMAIN_URL?.trim() || DEFAULT_DOMAIN_SOURCE_URL;
+const configuredSourceUrls = process.env.BESTCF_SOURCE_URLS?.split(",").map((value) => value.trim()).filter(Boolean);
+const textSources = configuredSourceUrls?.length
+  ? configuredSourceUrls.map((url, index) => ({ name: `Configured text source ${index + 1}`, url }))
+  : DEFAULT_TEXT_SOURCES.map((source, index) => index === 0 && process.env.BESTCF_DOMAIN_URL?.trim()
+    ? { ...source, url: process.env.BESTCF_DOMAIN_URL.trim() }
+    : source);
 const startedAt = new Date().toISOString();
 const runId = `${startedAt.replace(/[:.]/g, "-")}-${crypto.randomBytes(4).toString("hex")}`;
 
@@ -15,10 +20,16 @@ async function fetchCandidates() {
   return payload.data;
 }
 
-async function fetchDomainSource() {
-  const response = await fetch(domainSourceUrl, { headers: { accept: "text/plain", "user-agent": "cloudflare-node-radar/3.0" }, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`BestCF domain source returned HTTP ${response.status}`);
-  return response.text();
+async function fetchTextSources() {
+  const results = await Promise.allSettled(textSources.map(async (source) => {
+    const response = await fetch(source.url, { headers: { accept: "text/plain", "user-agent": "cloudflare-node-radar/4.0" }, signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error(`${source.name} returned HTTP ${response.status}`);
+    return { ...source, text: await response.text() };
+  }));
+  const loaded = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  const warnings = results.flatMap((result) => result.status === "rejected" ? [String(result.reason?.message || result.reason)] : []);
+  if (!loaded.length) throw new Error(`All text sources failed: ${warnings.join("; ")}`);
+  return { loaded, warnings };
 }
 
 async function sendToDashboard(result) {
@@ -44,16 +55,18 @@ async function sendToDashboard(result) {
 async function main() {
   let nodes = [];
   try {
-    const [candidates, domainSource] = await Promise.all([fetchCandidates(), fetchDomainSource()]);
+    const [candidates, textResult] = await Promise.all([fetchCandidates(), fetchTextSources()]);
     const selection = selectCandidates(candidates, 3);
-    const bestCfNodes = await buildBestCfNodes(domainSource);
-    nodes = deduplicateCandidates([...selection.nodes, ...bestCfNodes]);
+    const bestCfNodes = await buildBestCfNodes(textResult.loaded);
+    nodes = limitCandidatesByVersion([...selection.nodes, ...bestCfNodes], 10);
+    const sourceSummary = `${textResult.loaded.length + 1}/${textSources.length + 1} sources`;
+    const warningSummary = textResult.warnings.length ? `; ${textResult.warnings.length} unavailable` : "";
     const result = {
       runId,
       startedAt,
       completedAt: new Date().toISOString(),
       status: "success",
-      message: `${nodes.length} consolidated IPv4, IPv6, and domain endpoints measured from two feeds`,
+      message: `${nodes.length} top IPv4, IPv6, and domain endpoints measured from ${sourceSummary}${warningSummary}`,
       dnsUpdated: false,
       nodes,
     };
