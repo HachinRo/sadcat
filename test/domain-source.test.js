@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildBestCfNodes, parseBestCfSource, parseEndpoint } = require("../src/domain-source");
+const { DEFAULT_TEXT_SOURCES, buildBestCfNodes, parseBestCfSource, parseEndpoint } = require("../src/domain-source");
 
 test("classifies BestCF IPv4, IPv6, and domain endpoints", () => {
   assert.deepEqual(parseEndpoint("162.159.198.1:443#Official"), { address: "162.159.198.1", port: 443, ip: "162.159.198.1", version: "v4" });
@@ -37,4 +37,10 @@ test("combines sources and benchmarks duplicate endpoints once", async () => {
 test("honors version restrictions for IPv4-only feeds", () => {
   const endpoints = parseBestCfSource("ipv4.list.updated.at#Header\n1.1.1.1:443#IPv4", ["v4"]);
   assert.deepEqual(endpoints.map((endpoint) => endpoint.ip), ["1.1.1.1"]);
+});
+
+test("registers all five supplemental feeds as IPv6-only", () => {
+  const ipv6Sources = DEFAULT_TEXT_SOURCES.filter((source) => source.versions?.length === 1 && source.versions[0] === "v6");
+  assert.equal(ipv6Sources.length, 5);
+  assert.equal(DEFAULT_TEXT_SOURCES.length, 11);
 });
