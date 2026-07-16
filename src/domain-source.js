@@ -9,6 +9,11 @@ const DEFAULT_TEXT_SOURCES = [
   { name: "BestCF Gslege", url: "https://bestcf.pages.dev/gslege/Cfxyz.txt" },
   { name: "svip-s best IPs", url: "https://raw.githubusercontent.com/svip-s/cloudflare_ip/refs/heads/main/best_ips.txt", versions: ["v4"] },
   { name: "BestCFip IPv4", url: "https://raw.githubusercontent.com/joname1/BestCFip/refs/heads/main/ipv4.txt", versions: ["v4"] },
+  { name: "BestCF CFYes IPv6", url: "https://bestcf.pages.dev/cfyes/ipv6.txt", versions: ["v6"] },
+  { name: "BestCF vvHan IPv6", url: "https://bestcf.pages.dev/vvhan/ipv6.txt", versions: ["v6"] },
+  { name: "BestCF NiREvil IPv6", url: "https://bestcf.pages.dev/nirevil/ipv6.txt", versions: ["v6"] },
+  { name: "IPDB BestCF IPv6", url: "https://raw.githubusercontent.com/ymyuuu/IPDB/refs/heads/main/BestCF/bestcfv6.txt", versions: ["v6"] },
+  { name: "BestCFip IPv6", url: "https://raw.githubusercontent.com/joname1/BestCFip/refs/heads/main/ipv6.txt", versions: ["v6"] },
 ];
 const SPEED_TEST_HOST = "speed.cloudflare.com";
 
