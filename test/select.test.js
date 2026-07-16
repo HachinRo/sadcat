@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { selectCandidates } = require("../src/select");
+const { limitCandidatesByVersion, selectCandidates } = require("../src/select");
 
 function candidates(offset, version = "v4") {
   const ip = (suffix) => version === "v6" ? `2606:4700:${offset}::${suffix}` : `10.0.${offset}.${suffix}`;
@@ -67,4 +67,24 @@ test("rejects an address stored under the wrong IP family", () => {
 
 test("rejects an incomplete carrier result instead of publishing bad data", () => {
   assert.throws(() => selectCandidates({ v4: { CM: candidates(1), CU: [], CT: candidates(3) } }), /No valid IPv4 candidates for CU/);
+});
+
+test("keeps at most ten per sector ordered by latency then speed", () => {
+  const candidates = ["v4", "v6", "domain"].flatMap((version) => Array.from({ length: 12 }, (_, index) => ({
+    version,
+    carrier: "BESTCF",
+    ip: version === "v4" ? `192.0.2.${index + 1}` : version === "v6" ? `2606:4700::${index + 1}` : `node-${index + 1}.example.com`,
+    latency: index === 0 || index === 1 ? 10 : 10 + index,
+    speed: index === 1 ? 700 : 300,
+    rank: index + 1,
+    selected: false,
+  })));
+  const result = limitCandidatesByVersion(candidates, 10);
+  assert.equal(result.length, 30);
+  for (const version of ["v4", "v6", "domain"]) {
+    const sector = result.filter((node) => node.version === version);
+    assert.equal(sector.length, 10);
+    assert.equal(sector[0].speed, 700);
+    assert.deepEqual(sector.map((node) => node.rank), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  }
 });
