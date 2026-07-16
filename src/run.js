@@ -1,6 +1,5 @@
 const crypto = require("node:crypto");
 const { selectCandidates } = require("./select");
-const { updateDnsPod } = require("./dnspod");
 
 const sourceUrl = process.env.BEST_CF_IP_URL?.trim() || "https://api.4ce.cn/api/bestCFIP";
 const startedAt = new Date().toISOString();
@@ -18,8 +17,7 @@ async function sendToDashboard(result) {
   const baseUrl = process.env.SITES_INGEST_URL?.trim()?.replace(/\/$/, "");
   const token = process.env.SITES_RUNNER_TOKEN?.trim();
   if (!baseUrl || !token) {
-    console.warn("Dashboard ingestion skipped: SITES_INGEST_URL or SITES_RUNNER_TOKEN is missing");
-    return false;
+    throw new Error("SITES_INGEST_URL or SITES_RUNNER_TOKEN is missing");
   }
   const response = await fetch(`${baseUrl}/api/runs`, {
     method: "POST",
@@ -41,14 +39,13 @@ async function main() {
     const candidates = await fetchCandidates();
     const selection = selectCandidates(candidates, 3);
     nodes = selection.nodes;
-    const dns = await updateDnsPod(selection.selected);
     const result = {
       runId,
       startedAt,
       completedAt: new Date().toISOString(),
-      status: dns.configured ? "success" : "partial",
-      message: dns.message,
-      dnsUpdated: dns.updatedCount > 0,
+      status: "success",
+      message: `${nodes.length} optimized nodes copied from the public feed`,
+      dnsUpdated: false,
       nodes,
     };
     await sendToDashboard(result);

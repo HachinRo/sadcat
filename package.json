@@ -2,7 +2,7 @@
   "name": "cloudflare-node-radar-runner",
   "version": "2.0.0",
   "private": true,
-  "description": "One-shot Cloudflare node selection, DNSPod update, and dashboard ingestion runner",
+  "description": "One-shot Cloudflare node import and dashboard ingestion runner",
   "main": "src/run.js",
   "scripts": {
     "start": "node src/run.js",
@@ -11,8 +11,5 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "ISC",
-  "dependencies": {
-    "tencentcloud-sdk-nodejs-dnspod": "^4.0.907"
-  }
+  "license": "ISC"
 }

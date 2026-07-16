@@ -1,23 +1,17 @@
 # Cloudflare Node Radar runner
 
-This is a one-shot adaptation of `CloudflareIP-dnspod-ddns`. GitHub Actions starts it every 15 minutes; it does not keep a web server or scheduler alive.
+This one-shot runner copies optimized IPv4 and IPv6 candidates from the public feed used by the supplied `CloudflareIP-dnspod-ddns` project. GitHub Actions starts it every 15 minutes; it does not modify DNS records.
 
 ## Required GitHub Actions secrets
 
-- `DNSPOD_SECRET_ID`
-- `DNSPOD_SECRET_KEY`
-- `DNSPOD_DOMAIN`
-- `DNSPOD_SUBDOMAIN`
 - `SITES_INGEST_URL` — the deployed Site base URL
-- `SITES_RUNNER_TOKEN` — sent to the private Site and its ingestion endpoint
+- `SITES_RUNNER_TOKEN` — authorizes the private Site and its ingestion endpoint
 
-The workflow can also use the repository variable `BEST_CF_IP_URL` to replace the default candidate source.
+The workflow can optionally use the repository variable `BEST_CF_IP_URL` to replace the default `https://api.4ce.cn/api/bestCFIP` feed.
 
-## Behavior changes from the supplied project
+## Behavior
 
 - Runs once per invocation so scheduled jobs cannot overlap indefinitely.
-- Awaits every DNSPod mutation and fails visibly if any record update fails.
-- Correctly maps China Mobile (`CM`), China Unicom (`CU`), and China Telecom (`CT`) candidates to their matching DNSPod lines.
-- Chooses the default DNS line from the overall lowest-latency candidate.
-- Retains the top three candidates per carrier and address family for the dashboard.
-- Posts success, partial, and failure results to the Site.
+- Retains the top three IPv4 and IPv6 candidates for China Mobile (`CM`), China Unicom (`CU`), and China Telecom (`CT`).
+- Posts success and failure results to the dashboard.
+- Requires no DNS provider, domain, or DNS credentials.

@@ -1,6 +1,9 @@
 name: Select Cloudflare nodes
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -27,13 +30,9 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - name: Select nodes, update DNSPod, and publish result
+      - name: Copy optimized nodes and publish result
         run: npm start
         env:
-          DNSPOD_SECRET_ID: ${{ secrets.DNSPOD_SECRET_ID }}
-          DNSPOD_SECRET_KEY: ${{ secrets.DNSPOD_SECRET_KEY }}
-          DNSPOD_DOMAIN: ${{ secrets.DNSPOD_DOMAIN }}
-          DNSPOD_SUBDOMAIN: ${{ secrets.DNSPOD_SUBDOMAIN }}
           SITES_INGEST_URL: ${{ secrets.SITES_INGEST_URL }}
           SITES_RUNNER_TOKEN: ${{ secrets.SITES_RUNNER_TOKEN }}
           BEST_CF_IP_URL: ${{ vars.BEST_CF_IP_URL }}
