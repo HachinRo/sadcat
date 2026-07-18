@@ -1,6 +1,13 @@
 const crypto = require("node:crypto");
-const { buildBestCfNodes, DEFAULT_TEXT_SOURCES } = require("./domain-source");
-const { limitCandidatesByVersion, selectCandidates } = require("./select");
+const {
+  buildBestCfNodes,
+  CLOUDFLARE_IPV6_URL,
+  CLOUDFLARE_JDCLOUD_IPS_URL,
+  DEFAULT_TEXT_SOURCES,
+  keepWorkingNodes,
+  sampleOfficialIpCandidates,
+} = require("./domain-source");
+const { annotateLiveness, limitCandidatesByVersion, selectCandidates } = require("./select");
 
 const sourceUrl = process.env.BEST_CF_IP_URL?.trim() || "https://api.4ce.cn/api/bestCFIP";
 const configuredSourceUrls = process.env.BESTCF_SOURCE_URLS?.split(",").map((value) => value.trim()).filter(Boolean);
@@ -32,18 +39,66 @@ async function fetchTextSources() {
   return { loaded, warnings };
 }
 
-async function sendToDashboard(result) {
+function dashboardConfig() {
   const baseUrl = process.env.SITES_INGEST_URL?.trim()?.replace(/\/$/, "");
   const token = process.env.SITES_RUNNER_TOKEN?.trim();
-  if (!baseUrl || !token) {
-    throw new Error("SITES_INGEST_URL or SITES_RUNNER_TOKEN is missing");
+  if (!baseUrl || !token) throw new Error("SITES_INGEST_URL or SITES_RUNNER_TOKEN is missing");
+  return { baseUrl, token };
+}
+
+function dashboardHeaders(token) {
+  return {
+    "authorization": `Bearer ${token}`,
+    "OAI-Sites-Authorization": `Bearer ${token}`,
+  };
+}
+
+async function fetchPreviousNodes() {
+  try {
+    const { baseUrl, token } = dashboardConfig();
+    const response = await fetch(`${baseUrl}/api/runs`, {
+      headers: { ...dashboardHeaders(token), accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new Error(`Dashboard history returned HTTP ${response.status}`);
+    const payload = await response.json();
+    return {
+      nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
+      completedAt: payload?.nodesUpdatedAt || payload?.latest?.completedAt || startedAt,
+      warning: "",
+    };
+  } catch (error) {
+    return { nodes: [], completedAt: startedAt, warning: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function fetchOfficialIpSample() {
+  try {
+    const [ipv6Response, jdCloudResponse] = await Promise.all([
+      fetch(CLOUDFLARE_IPV6_URL, { headers: { accept: "text/plain", "user-agent": "cloudflare-node-radar/5.0" }, signal: AbortSignal.timeout(20_000) }),
+      fetch(CLOUDFLARE_JDCLOUD_IPS_URL, { headers: { accept: "application/json", "user-agent": "cloudflare-node-radar/5.0" }, signal: AbortSignal.timeout(20_000) }),
+    ]);
+    if (!ipv6Response.ok) throw new Error(`Cloudflare IPv6 ranges returned HTTP ${ipv6Response.status}`);
+    if (!jdCloudResponse.ok) throw new Error(`Cloudflare China ranges returned HTTP ${jdCloudResponse.status}`);
+    const endpoints = sampleOfficialIpCandidates(await ipv6Response.text(), await jdCloudResponse.json(), 30);
+    if (endpoints.length !== 30) throw new Error(`Official range sampler produced ${endpoints.length}/30 candidates`);
+    return { endpoints, warning: "" };
+  } catch (error) {
+    return { endpoints: [], warning: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function nodesAsText(nodes) {
+  return nodes.map((node) => node.ip).filter((value) => typeof value === "string" && value.trim()).join("\n");
+}
+
+async function sendToDashboard(result) {
+  const { baseUrl, token } = dashboardConfig();
   const response = await fetch(`${baseUrl}/api/runs`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "authorization": `Bearer ${token}`,
-      "OAI-Sites-Authorization": `Bearer ${token}`,
+      ...dashboardHeaders(token),
     },
     body: JSON.stringify(result),
     signal: AbortSignal.timeout(20_000),
@@ -55,18 +110,38 @@ async function sendToDashboard(result) {
 async function main() {
   let nodes = [];
   try {
-    const [candidates, textResult] = await Promise.all([fetchCandidates(), fetchTextSources()]);
+    const [candidates, textResult, officialResult, previousResult] = await Promise.all([
+      fetchCandidates(),
+      fetchTextSources(),
+      fetchOfficialIpSample(),
+      fetchPreviousNodes(),
+    ]);
     const selection = selectCandidates(candidates, 3);
-    const bestCfNodes = await buildBestCfNodes(textResult.loaded);
-    nodes = limitCandidatesByVersion([...selection.nodes, ...bestCfNodes], 10);
+    const probeSources = [
+      ...textResult.loaded,
+      { name: "Optimized-node API", text: nodesAsText(selection.nodes) },
+      { name: "Previously working nodes", text: nodesAsText(previousResult.nodes) },
+      { name: "Official Cloudflare random sample", text: officialResult.endpoints.map((endpoint) => endpoint.ip).join("\n") },
+    ];
+    const measuredNodes = await buildBestCfNodes(probeSources);
+    const workingNodes = keepWorkingNodes(measuredNodes);
+    const rankedNodes = limitCandidatesByVersion(workingNodes, 10);
+    nodes = annotateLiveness(rankedNodes, previousResult.nodes, previousResult.completedAt, startedAt);
+    if (!nodes.length) throw new Error("No candidates passed the HTTPS connectivity probe");
     const sourceSummary = `${textResult.loaded.length + 1}/${textSources.length + 1} sources`;
-    const warningSummary = textResult.warnings.length ? `; ${textResult.warnings.length} unavailable` : "";
+    const warnings = [
+      ...textResult.warnings,
+      ...(officialResult.warning ? [`Official Cloudflare sample: ${officialResult.warning}`] : []),
+      ...(previousResult.warning ? [`Previous pool: ${previousResult.warning}`] : []),
+    ];
+    const warningSummary = warnings.length ? `; ${warnings.length} unavailable` : "";
+    const dropped = measuredNodes.length - workingNodes.length;
     const result = {
       runId,
       startedAt,
       completedAt: new Date().toISOString(),
       status: "success",
-      message: `${nodes.length} top IPv4, IPv6, and domain endpoints measured from ${sourceSummary}${warningSummary}`,
+      message: `${nodes.length} top endpoints; ${workingNodes.length} passed and ${dropped} failed HTTPS probes; ${officialResult.endpoints.length}/30 official random IPs sampled from ${sourceSummary}${warningSummary}`,
       dnsUpdated: false,
       nodes,
     };
