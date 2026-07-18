@@ -63,6 +63,22 @@ function limitCandidatesByVersion(candidates, limit = 10) {
     .map((candidate, index) => ({ ...candidate, rank: index + 1, selected: index === 0 })));
 }
 
+function annotateLiveness(nodes, previousNodes, previousCompletedAt, startedAt) {
+  const previousByAddress = new Map(previousNodes.map((node) => [`${node.version}:${String(node.ip).toLowerCase()}`, node]));
+  return nodes.map((node) => {
+    const previous = previousByAddress.get(`${node.version}:${node.ip.toLowerCase()}`);
+    const previousLiveSince = typeof previous?.liveSince === "string" && !Number.isNaN(Date.parse(previous.liveSince))
+      ? previous.liveSince
+      : previous ? previousCompletedAt : startedAt;
+    const previousChecks = Number(previous?.successfulChecks);
+    return {
+      ...node,
+      liveSince: previousLiveSince,
+      successfulChecks: previous && Number.isInteger(previousChecks) && previousChecks > 0 ? previousChecks + 1 : 1,
+    };
+  });
+}
+
 function selectCandidates(data, retainPerCarrier = 3) {
   const nodes = [];
   const selected = { v4: {}, v6: {} };
@@ -89,4 +105,4 @@ function selectCandidates(data, retainPerCarrier = 3) {
   return { nodes: deduplicateCandidates(nodes), selected };
 }
 
-module.exports = { CARRIERS, VERSIONS, deduplicateCandidates, limitCandidatesByVersion, normalizeCandidate, selectCandidates };
+module.exports = { CARRIERS, VERSIONS, annotateLiveness, deduplicateCandidates, limitCandidatesByVersion, normalizeCandidate, selectCandidates };
