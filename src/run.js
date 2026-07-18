@@ -127,7 +127,7 @@ async function main() {
     const workingNodes = keepWorkingNodes(measuredNodes);
     const rankedNodes = limitCandidatesByVersion(workingNodes, 10);
     nodes = annotateLiveness(rankedNodes, previousResult.nodes, previousResult.completedAt, startedAt);
-    if (!nodes.length) throw new Error("No candidates passed the HTTPS connectivity probe");
+    if (!nodes.length) throw new Error("No candidates passed the HTTPS and 300 KB/s minimum-speed checks");
     const sourceSummary = `${textResult.loaded.length + 1}/${textSources.length + 1} sources`;
     const warnings = [
       ...textResult.warnings,
@@ -141,7 +141,7 @@ async function main() {
       startedAt,
       completedAt: new Date().toISOString(),
       status: "success",
-      message: `${nodes.length} top endpoints; ${workingNodes.length} passed and ${dropped} failed HTTPS probes; ${officialResult.endpoints.length}/30 official random IPs sampled from ${sourceSummary}${warningSummary}`,
+      message: `${nodes.length} top endpoints; ${workingNodes.length} passed and ${dropped} failed connectivity/speed checks (minimum 300 KB/s); ${officialResult.endpoints.length}/30 official random IPs sampled from ${sourceSummary}${warningSummary}`,
       dnsUpdated: false,
       nodes,
     };
