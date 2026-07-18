@@ -1,6 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { DEFAULT_TEXT_SOURCES, buildBestCfNodes, parseBestCfSource, parseEndpoint } = require("../src/domain-source");
+const {
+  DEFAULT_TEXT_SOURCES,
+  buildBestCfNodes,
+  keepWorkingNodes,
+  parseBestCfSource,
+  parseEndpoint,
+  randomAddressFromCidr,
+  sampleOfficialIpCandidates,
+} = require("../src/domain-source");
 
 test("classifies BestCF IPv4, IPv6, and domain endpoints", () => {
   assert.deepEqual(parseEndpoint("162.159.198.1:443#Official"), { address: "162.159.198.1", port: 443, ip: "162.159.198.1", version: "v4" });
@@ -43,4 +51,31 @@ test("registers all five supplemental feeds as IPv6-only", () => {
   const ipv6Sources = DEFAULT_TEXT_SOURCES.filter((source) => source.versions?.length === 1 && source.versions[0] === "v6");
   assert.equal(ipv6Sources.length, 5);
   assert.equal(DEFAULT_TEXT_SOURCES.length, 11);
+});
+
+test("samples host addresses from Cloudflare IPv4 and IPv6 CIDRs", () => {
+  const zeros = (length) => Buffer.alloc(length);
+  assert.equal(randomAddressFromCidr("203.0.113.0/24", zeros), "203.0.113.1");
+  assert.equal(randomAddressFromCidr("2606:4700:1234::/48", zeros), "2606:4700:1234:0:0:0:0:0");
+});
+
+test("randomly selects exactly 30 official Cloudflare candidates across both IP families", () => {
+  const sampled = sampleOfficialIpCandidates(
+    "2606:4700::/32\n2a06:98c0::/29\n",
+    { result: { jdcloud_cidrs: ["14.204.96.224/27", "60.13.99.64/26", "2408:8719:64:50:1000::/68"] } },
+    30,
+  );
+  assert.equal(sampled.length, 30);
+  assert.equal(sampled.filter((endpoint) => endpoint.version === "v4").length, 15);
+  assert.equal(sampled.filter((endpoint) => endpoint.version === "v6").length, 15);
+  assert.equal(new Set(sampled.map((endpoint) => endpoint.address)).size, 30);
+});
+
+test("drops every endpoint that fails latency or transfer verification", () => {
+  const working = keepWorkingNodes([
+    { ip: "1.1.1.1", latency: 20, speed: 500 },
+    { ip: "1.0.0.1", latency: 0, speed: 0 },
+    { ip: "2606:4700::1", latency: 20, speed: 0 },
+  ]);
+  assert.deepEqual(working.map((node) => node.ip), ["1.1.1.1"]);
 });
