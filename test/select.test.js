@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { limitCandidatesByVersion, selectCandidates } = require("../src/select");
+const { annotateLiveness, limitCandidatesByVersion, selectCandidates } = require("../src/select");
 
 function candidates(offset, version = "v4") {
   const ip = (suffix) => version === "v6" ? `2606:4700:${offset}::${suffix}` : `10.0.${offset}.${suffix}`;
@@ -87,4 +87,20 @@ test("keeps at most ten per sector ordered by latency then speed", () => {
     assert.equal(sector[0].speed, 700);
     assert.deepEqual(sector.map((node) => node.rank), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   }
+});
+
+test("preserves live time for surviving nodes and resets it for new nodes", () => {
+  const previousCompletedAt = "2026-07-18T00:15:00.000Z";
+  const startedAt = "2026-07-18T00:30:00.000Z";
+  const nodes = annotateLiveness([
+    { version: "v4", ip: "1.1.1.1" },
+    { version: "v6", ip: "2606:4700::1" },
+  ], [
+    { version: "v4", ip: "1.1.1.1", liveSince: "2026-07-17T23:00:00.000Z", successfulChecks: 5 },
+  ], previousCompletedAt, startedAt);
+
+  assert.deepEqual(nodes.map(({ liveSince, successfulChecks }) => ({ liveSince, successfulChecks })), [
+    { liveSince: "2026-07-17T23:00:00.000Z", successfulChecks: 6 },
+    { liveSince: startedAt, successfulChecks: 1 },
+  ]);
 });
