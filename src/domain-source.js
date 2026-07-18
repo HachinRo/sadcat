@@ -17,6 +17,7 @@ const DEFAULT_TEXT_SOURCES = [
   { name: "BestCFip IPv6", url: "https://raw.githubusercontent.com/joname1/BestCFip/refs/heads/main/ipv6.txt", versions: ["v6"] },
 ];
 const SPEED_TEST_HOST = "speed.cloudflare.com";
+const MIN_NODE_SPEED_KBPS = 300;
 const CLOUDFLARE_IPV6_URL = "https://www.cloudflare.com/ips-v6";
 const CLOUDFLARE_JDCLOUD_IPS_URL = "https://api.cloudflare.com/client/v4/ips?networks=jdcloud";
 
@@ -239,7 +240,7 @@ async function buildBestCfNodes(sources, probe = benchmarkTarget, concurrency = 
 }
 
 function keepWorkingNodes(nodes) {
-  return nodes.filter((node) => Number.isFinite(node.latency) && node.latency > 0 && Number.isFinite(node.speed) && node.speed > 0);
+  return nodes.filter((node) => Number.isFinite(node.latency) && node.latency > 0 && Number.isFinite(node.speed) && node.speed >= MIN_NODE_SPEED_KBPS);
 }
 
 module.exports = {
@@ -247,6 +248,7 @@ module.exports = {
   CLOUDFLARE_JDCLOUD_IPS_URL,
   DEFAULT_DOMAIN_SOURCE_URL,
   DEFAULT_TEXT_SOURCES,
+  MIN_NODE_SPEED_KBPS,
   benchmarkTarget,
   buildBestCfNodes,
   keepWorkingNodes,
