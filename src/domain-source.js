@@ -1,4 +1,5 @@
 const https = require("node:https");
+const crypto = require("node:crypto");
 const { isIP } = require("node:net");
 
 const DEFAULT_DOMAIN_SOURCE_URL = "https://bestcf.pages.dev/domain/all.txt";
@@ -16,6 +17,78 @@ const DEFAULT_TEXT_SOURCES = [
   { name: "BestCFip IPv6", url: "https://raw.githubusercontent.com/joname1/BestCFip/refs/heads/main/ipv6.txt", versions: ["v6"] },
 ];
 const SPEED_TEST_HOST = "speed.cloudflare.com";
+const CLOUDFLARE_IPV6_URL = "https://www.cloudflare.com/ips-v6";
+const CLOUDFLARE_JDCLOUD_IPS_URL = "https://api.cloudflare.com/client/v4/ips?networks=jdcloud";
+
+function randomBigInt(byteLength, randomBytes = crypto.randomBytes) {
+  const hex = randomBytes(byteLength).toString("hex");
+  return hex ? BigInt(`0x${hex}`) : 0n;
+}
+
+function ipv4ToBigInt(address) {
+  return address.split(".").reduce((value, octet) => (value << 8n) | BigInt(Number(octet)), 0n);
+}
+
+function bigIntToIpv4(value) {
+  return [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 255n)).join(".");
+}
+
+function ipv6ToBigInt(address) {
+  const halves = address.toLowerCase().split("::");
+  if (halves.length > 2) throw new Error(`Invalid IPv6 address: ${address}`);
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves[1] ? halves[1].split(":") : [];
+  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
+  const parts = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
+  if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) throw new Error(`Invalid IPv6 address: ${address}`);
+  return parts.reduce((value, part) => (value << 16n) | BigInt(`0x${part}`), 0n);
+}
+
+function bigIntToIpv6(value) {
+  return Array.from({ length: 8 }, (_, index) => Number((value >> BigInt((7 - index) * 16)) & 0xffffn).toString(16)).join(":");
+}
+
+function randomAddressFromCidr(cidr, randomBytes = crypto.randomBytes) {
+  const [address, prefixText] = String(cidr).trim().split("/");
+  const version = isIP(address);
+  const bits = version === 4 ? 32 : version === 6 ? 128 : 0;
+  const prefix = Number(prefixText);
+  if (!bits || !Number.isInteger(prefix) || prefix < 0 || prefix > bits) throw new Error(`Invalid CIDR: ${cidr}`);
+  const source = version === 4 ? ipv4ToBigInt(address) : ipv6ToBigInt(address);
+  const hostBits = BigInt(bits - prefix);
+  const hostMask = hostBits === 0n ? 0n : (1n << hostBits) - 1n;
+  const base = source & ~hostMask;
+  const size = hostMask + 1n;
+  let offset = randomBigInt(version === 4 ? 4 : 16, randomBytes) % size;
+  if (version === 4 && size > 2n) offset = 1n + (offset % (size - 2n));
+  const sampled = base + offset;
+  return version === 4 ? bigIntToIpv4(sampled) : bigIntToIpv6(sampled);
+}
+
+function sampleCidrs(cidrs, count, randomBytes = crypto.randomBytes) {
+  const uniqueCidrs = [...new Set(cidrs.map((cidr) => String(cidr).trim()).filter(Boolean))];
+  const sampled = new Set();
+  const maxAttempts = Math.max(100, count * 30);
+  for (let attempt = 0; attempt < maxAttempts && sampled.size < count && uniqueCidrs.length; attempt += 1) {
+    const index = Number(randomBigInt(4, randomBytes) % BigInt(uniqueCidrs.length));
+    sampled.add(randomAddressFromCidr(uniqueCidrs[index], randomBytes));
+  }
+  return [...sampled];
+}
+
+function sampleOfficialIpCandidates(ipv6Text, jdCloudPayload, total = 30, randomBytes = crypto.randomBytes) {
+  const officialV6 = String(ipv6Text || "").split(/\r?\n/).map((value) => value.trim()).filter((value) => value.includes("/"));
+  const jdCloudCidrs = Array.isArray(jdCloudPayload?.result?.jdcloud_cidrs) ? jdCloudPayload.result.jdcloud_cidrs : [];
+  const ipv4Cidrs = jdCloudCidrs.filter((value) => !String(value).includes(":"));
+  const ipv6Cidrs = [...officialV6, ...jdCloudCidrs.filter((value) => String(value).includes(":"))];
+  if (!ipv4Cidrs.length && !ipv6Cidrs.length) throw new Error("Official Cloudflare sources returned no CIDR ranges");
+  const ipv4Count = ipv4Cidrs.length && ipv6Cidrs.length ? Math.floor(total / 2) : ipv4Cidrs.length ? total : 0;
+  const ipv6Count = total - ipv4Count;
+  return [
+    ...sampleCidrs(ipv4Cidrs, ipv4Count, randomBytes),
+    ...sampleCidrs(ipv6Cidrs, ipv6Count, randomBytes),
+  ].map((address) => parseEndpoint(address)).filter(Boolean);
+}
 
 function parseEndpoint(line) {
   const value = String(line || "").split("#", 1)[0].trim();
@@ -135,4 +208,20 @@ async function buildBestCfNodes(sources, probe = benchmarkTarget, concurrency = 
   });
 }
 
-module.exports = { DEFAULT_DOMAIN_SOURCE_URL, DEFAULT_TEXT_SOURCES, benchmarkTarget, buildBestCfNodes, parseBestCfSource, parseEndpoint };
+function keepWorkingNodes(nodes) {
+  return nodes.filter((node) => Number.isFinite(node.latency) && node.latency > 0 && Number.isFinite(node.speed) && node.speed > 0);
+}
+
+module.exports = {
+  CLOUDFLARE_IPV6_URL,
+  CLOUDFLARE_JDCLOUD_IPS_URL,
+  DEFAULT_DOMAIN_SOURCE_URL,
+  DEFAULT_TEXT_SOURCES,
+  benchmarkTarget,
+  buildBestCfNodes,
+  keepWorkingNodes,
+  parseBestCfSource,
+  parseEndpoint,
+  randomAddressFromCidr,
+  sampleOfficialIpCandidates,
+};
