@@ -165,7 +165,37 @@ function requestProbe(target, { hostHeader, path, servername, timeoutMs = 5000 }
   });
 }
 
+async function requestDashboardIpv6Probe(target) {
+  const baseUrl = process.env.SITES_INGEST_URL?.trim().replace(/\/$/, "");
+  const token = process.env.SITES_RUNNER_TOKEN?.trim();
+  if (!baseUrl || !token) throw new Error("Dashboard IPv6 probe is not configured");
+  const response = await fetch(`${baseUrl}/api/ipv6-probe`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "OAI-Sites-Authorization": `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "cloudflare-node-radar/5.0",
+    },
+    body: JSON.stringify({ address: target.address, port: target.port }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Dashboard IPv6 probe returned HTTP ${response.status}`);
+  const result = await response.json();
+  const latency = Number(result?.latency);
+  const speed = Number(result?.speed);
+  if (!(latency > 0) || !(speed > 0)) throw new Error("Dashboard IPv6 probe returned an invalid measurement");
+  return { latency, speed };
+}
+
 async function benchmarkTarget(target) {
+  if (target.version === "v6") {
+    try {
+      return await requestDashboardIpv6Probe(target);
+    } catch {
+      return { latency: 0, speed: 0 };
+    }
+  }
   try {
     return await requestProbe(target, { hostHeader: SPEED_TEST_HOST, servername: SPEED_TEST_HOST, path: "/__down?bytes=131072" });
   } catch {
