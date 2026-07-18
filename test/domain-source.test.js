@@ -71,11 +71,13 @@ test("randomly selects exactly 30 official Cloudflare candidates across both IP 
   assert.equal(new Set(sampled.map((endpoint) => endpoint.address)).size, 30);
 });
 
-test("drops every endpoint that fails latency or transfer verification", () => {
+test("drops failed endpoints and every node below 300 KB/s", () => {
   const working = keepWorkingNodes([
     { ip: "1.1.1.1", latency: 20, speed: 500 },
+    { ip: "1.1.1.2", latency: 20, speed: 300 },
+    { ip: "1.1.1.3", latency: 20, speed: 299.9 },
     { ip: "1.0.0.1", latency: 0, speed: 0 },
     { ip: "2606:4700::1", latency: 20, speed: 0 },
   ]);
-  assert.deepEqual(working.map((node) => node.ip), ["1.1.1.1"]);
+  assert.deepEqual(working.map((node) => node.ip), ["1.1.1.1", "1.1.1.2"]);
 });
